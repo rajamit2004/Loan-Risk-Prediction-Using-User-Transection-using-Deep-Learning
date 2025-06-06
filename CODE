@@ -1,0 +1,121 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
+import matplotlib.pyplot as plt
+
+# Constants
+DATA_PATH = 'C:/Users/being/OneDrive/Desktop/Demo/loan_data.csv'
+TEST_SIZE = 0.2
+RANDOM_STATE = 42
+EPOCHS = 100
+BATCH_SIZE = 32
+
+def load_and_preprocess_data():
+    """Load and preprocess the loan data"""
+    # Load dataset
+    df = pd.read_csv(DATA_PATH)
+    
+    # Basic preprocessing (adjust based on your actual dataset)
+    # Drop irrelevant columns
+    df = df.drop(['id', 'member_id'], axis=1, errors='ignore')
+    
+    # Convert target variable to binary (1 = default, 0 = paid)
+    df['loan_status'] = df['loan_status'].apply(lambda x: 1 if x in ['Charged Off', 'Default'] else 0)
+    
+    # Handle categorical variables
+    categorical_cols = df.select_dtypes(include=['object']).columns
+    for col in categorical_cols:
+        if df[col].nunique() < 10:  # One-hot encode for low cardinality
+            df = pd.get_dummies(df, columns=[col], drop_first=True)
+        else:  # Label encode for high cardinality
+            le = LabelEncoder()
+            df[col] = le.fit_transform(df[col].astype(str))
+    
+    # Handle missing values
+    df = df.fillna(df.mean())
+    
+    return df
+
+def build_model(input_shape):
+    """Build the feedforward neural network model"""
+    model = Sequential([
+        Dense(64, activation='relu', input_shape=(input_shape,)),
+        Dropout(0.2),
+        Dense(32, activation='relu'),
+        Dropout(0.2),
+        Dense(1, activation='sigmoid')
+    ])
+    
+    model.compile(optimizer=Adam(learning_rate=0.001),
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+    
+    return model
+
+def evaluate_model(model, X_test, y_test):
+    """Evaluate model performance"""
+    y_pred = (model.predict(X_test) > 0.5).astype(int)
+    
+    print("\nModel Evaluation:")
+    print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
+    print(f"Precision: {precision_score(y_test, y_pred):.4f}")
+    print(f"Recall: {recall_score(y_test, y_pred):.4f}")
+    print(f"F1 Score: {f1_score(y_test, y_pred):.4f}")
+    print(f"ROC AUC: {roc_auc_score(y_test, y_pred):.4f}")
+    
+    # Confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    print("\nConfusion Matrix:")
+    print(cm)
+    
+    # Plot training history
+    plt.plot(model.history.history['accuracy'], label='accuracy')
+    plt.plot(model.history.history['val_accuracy'], label='val_accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.show()
+
+def main():
+    # Load and preprocess data
+    print("Loading and preprocessing data...")
+    df = load_and_preprocess_data()
+    
+    # Split into features and target
+    X = df.drop('loan_status', axis=1)
+    y = df['loan_status']
+    
+    # Split into train and test sets
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y)
+    
+    # Standardize features
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+    
+    # Build and train model
+    print("\nBuilding and training model...")
+    model = build_model(X_train.shape[1])
+    
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    
+    history = model.fit(
+        X_train, y_train,
+        validation_split=0.2,
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        callbacks=[early_stopping],
+        verbose=1)
+    
+    # Evaluate model
+    evaluate_model(model, X_test, y_test)
+
+if __name__ == "__main__":
+    main()
